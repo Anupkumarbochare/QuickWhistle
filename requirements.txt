@@ -1,0 +1,39 @@
+# QuickWhistle dependencies (Python 3.11+)
+# Stack is LOCKED per the build brief — do not swap libraries without asking.
+
+# --- PDF extraction ---
+PyMuPDF==1.24.10          # `fitz` — primary text extraction
+pdfplumber==0.11.4        # table-like pages
+pytesseract==0.3.13       # OCR fallback only (requires system Tesseract binary)
+Pillow==10.4.0            # image handling for OCR
+
+# --- Orchestration (kept light) ---
+llama-index-core==0.11.14
+
+# --- Embeddings (local, free) ---
+sentence-transformers==3.1.1   # model: BAAI/bge-small-en-v1.5
+
+# --- Vector store (local, persistent) ---
+chromadb==0.5.5
+
+# --- Hybrid retrieval ---
+rank-bm25==0.2.2          # keyword/BM25 side of hybrid search
+
+# --- Generation LLM adapters (swappable via config) ---
+google-generativeai==0.8.2     # default: gemini-1.5-flash (free tier)
+ollama==0.3.3                  # alternative: local llama3.1 / llama3.2
+
+# --- Evaluation ---
+ragas==0.1.21             # faithfulness, answer relevancy, context recall
+datasets==2.21.0          # RAGAS needs this for its dataset format
+langchain-google-genai    # wraps Gemini as a LangChain LLM for RAGAS judging
+
+# --- UI ---
+streamlit==1.38.0
+
+# --- Config/secrets ---
+python-dotenv==1.0.1
+
+# --- Optional (demo screenshots only; not needed to run the app) ---
+# pip install playwright && python -m playwright install chromium
+# playwright
