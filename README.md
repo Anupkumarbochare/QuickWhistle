@@ -52,14 +52,14 @@ user question ─▶ retrieve.py   detect league ─▶ hybrid search (BM25 + de
                 tools.py       metric↔imperial converter via tool calling
 ```
 
-## Tech stack (locked)
+## Tech stack 
 
 | Layer | Tool |
 |---|---|
 | Language | Python 3.11+ |
 | PDF extraction | PyMuPDF (`fitz`), `pdfplumber`, `pytesseract` (OCR fallback) |
 | Orchestration | LlamaIndex (light) |
-| Embeddings | `sentence-transformers` — `BAAI/bge-small-en-v1.5` (local, free) |
+| Embeddings | `sentence-transformers` — `BAAI/bge-small-en-v1.5` (local) |
 | Vector store | Chroma (local, persistent), one collection per league |
 | Retrieval | Hybrid: BM25 (`rank_bm25`) + dense (Chroma), fused via reciprocal rank fusion |
 | Generation LLM | Swappable via one config value: **Gemini** (default), local **Ollama**, or an offline **mock** stub |
@@ -168,8 +168,8 @@ against the **2025–26 editions** (NHL, PWHL, IIHF, AHL, NCAA) and the
 > playing-rules edition. It does **not** contain the youth body-checking
 > *age-progression* (which lives in USA Hockey's youth rules). So a question like
 > *"At what age is body checking allowed?"* correctly yields a **graceful
-> limitation/refusal** rather than a fabricated age — verified in the eval. Swap
-> in the full youth rulebook if you need that content.
+> limitation/refusal** rather than a fabricated age — verified in the eval. We have to swap
+> in the full youth rulebook if we need that content.
 
 ---
 
@@ -241,20 +241,6 @@ python tests/make_screenshots.py                 # regenerate docs/screenshots (
 
 Generated headlessly on the `mock` backend via `tests/make_screenshots.py`
 (install the optional `playwright` extra + `python -m playwright install chromium`).
-
----
-
-## Troubleshooting
-
-- **"Cannot copy out of meta tensor" on first query in the UI** — Streamlit's
-  module file-watcher can interrupt the embedding model's load. This repo ships
-  `.streamlit/config.toml` with `fileWatcherType = "none"` to prevent it. If you
-  removed that file, re-add it or launch with
-  `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none streamlit run app.py`.
-- **Gemini `404 ... is not found`** — the model name was retired; set a current
-  one (e.g. `gemini-2.5-flash-lite`) in `.env`.
-- **Gemini `429 RESOURCE_EXHAUSTED`** — daily/per-minute free quota hit; wait for
-  reset, switch `GEMINI_MODEL` (separate bucket), or use `MODEL_PROVIDER=ollama`.
 
 ---
 
