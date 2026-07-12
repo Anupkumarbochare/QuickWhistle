@@ -30,8 +30,9 @@ MODEL_PROVIDER=mock streamlit run app.py
 $env:MODEL_PROVIDER="mock"; streamlit run app.py
 ```
 
-For real generated answers, set `MODEL_PROVIDER=gemini` (or `ollama`) in `.env`
-and just `streamlit run app.py`. To rebuild everything from scratch:
+For real generated answers, set `MODEL_PROVIDER=anthropic` (default) and add
+`ANTHROPIC_API_KEY` in `.env`, then `streamlit run app.py`. To rebuild everything
+from scratch:
 
 ```bash
 python src/ingest.py --all && python src/build_index.py --all && streamlit run app.py
@@ -62,7 +63,7 @@ user question ─▶ retrieve.py   detect league ─▶ hybrid search (BM25 + de
 | Embeddings | `sentence-transformers` — `BAAI/bge-small-en-v1.5` (local) |
 | Vector store | Chroma (local, persistent), one collection per league |
 | Retrieval | Hybrid: BM25 (`rank_bm25`) + dense (Chroma), fused via reciprocal rank fusion |
-| Generation LLM | Swappable via one config value: **Gemini** (default), local **Ollama**, or an offline **mock** stub |
+| Generation LLM | Swappable via one config value: **Claude / Anthropic** (default, `claude-haiku-4-5`), **Gemini**, local **Ollama**, or an offline **mock** stub |
 | Evaluation | RAGAS + custom citation-accuracy check |
 | UI | Streamlit |
 | Config/secrets | python-dotenv (`.env`) |
@@ -114,11 +115,30 @@ Only needed if a PDF page has no extractable text. PyMuPDF handles most pages.
 
 ---
 
-## Switching the generation model (Gemini / Ollama / mock)
+## Switching the generation model (Claude / Gemini / Ollama / mock)
 
 The backend is **one config value** (`MODEL_PROVIDER`) in `.env`. No code changes.
 
-### Option A — Gemini (default, free tier)
+### Option A — Claude / Anthropic (default)
+```dotenv
+MODEL_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your_api_key_here
+ANTHROPIC_MODEL=claude-haiku-4-5
+```
+Get a key at <https://console.anthropic.com> (Settings → API keys).
+
+> **Model note:** `claude-haiku-4-5` is the cheapest capable tier ($1/$5 per 1M
+> tokens) and is well suited to grounded, cite-from-context RAG answers. Bump to
+> `claude-sonnet-5` ($3/$15) or `claude-opus-4-8` ($5/$25) via `ANTHROPIC_MODEL`
+> for a higher-quality pass — the adapter drops the `temperature` param
+> automatically for models that reject it, so switching never breaks.
+>
+> **Cost:** each grounded answer is ~5–6k input + ~300–400 output tokens
+> (≈ $0.007 on Haiku). A full 21-question eval + RAGAS run + demo comfortably
+> fits in a few dollars of credits. Use `MODEL_PROVIDER=mock` for UI/CI work to
+> spend nothing.
+
+### Option B — Gemini (free tier)
 ```dotenv
 MODEL_PROVIDER=gemini
 GEMINI_API_KEY=your_api_key_here
@@ -137,7 +157,7 @@ Get a free key at <https://aistudio.google.com/app/apikey>.
 > so you can finish across days or rotate models (each model has its own daily
 > bucket). For heavy/offline runs, use Ollama.
 
-### Option B — Ollama (fully local, no API key, no quota)
+### Option C — Ollama (fully local, no API key, no quota)
 ```dotenv
 MODEL_PROVIDER=ollama
 OLLAMA_MODEL=llama3.1
@@ -146,7 +166,7 @@ OLLAMA_HOST=http://localhost:11434
 Install Ollama from <https://ollama.com>, then `ollama pull llama3.1`.
 Best choice for the **full RAGAS run** (quota-free).
 
-### Option C — mock (offline stub, no model at all)
+### Option D — mock (offline stub, no model at all)
 ```dotenv
 MODEL_PROVIDER=mock
 ```

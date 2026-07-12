@@ -20,7 +20,8 @@ chromadb==0.5.5
 rank-bm25==0.2.2          # keyword/BM25 side of hybrid search
 
 # --- Generation LLM adapters (swappable via config) ---
-google-generativeai==0.8.2     # default: gemini-1.5-flash (free tier)
+anthropic==0.116.0             # default: Claude via the Anthropic API (claude-haiku-4-5)
+google-generativeai==0.8.2     # alternative: Gemini (free tier)
 ollama==0.3.3                  # alternative: local llama3.1 / llama3.2
 
 # --- Evaluation ---

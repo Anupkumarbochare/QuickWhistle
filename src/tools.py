@@ -63,13 +63,50 @@ def _norm_unit(u: str) -> str:
     return u.strip().lower().rstrip(".").replace('"', "in").replace("'", "ft")
 
 
+# Imperial length units (used to decide how to normalize an awkward result).
+_IMPERIAL_LEN = {"ft", "foot", "feet", "in", "inch", "inches", "yd", "yard", "yards"}
+
+
+def _normalize_length(result: float, to_unit_norm: str) -> str | None:
+    """Render an awkward length result in a more natural unit.
+
+    Prevents output like "551 inches" or "1402 cm" when "14 m" / "45 ft 11 in"
+    reads better. Returns None when the requested unit is already sensible for
+    the magnitude (so the caller keeps the plain "<result> <to_unit>" form).
+    """
+    if to_unit_norm not in _LENGTH:
+        return None
+    meters = result * _LENGTH[to_unit_norm]
+    if to_unit_norm in _IMPERIAL_LEN:
+        # Big imperial spans read best as feet + inches.
+        total_in = meters / 0.0254
+        if to_unit_norm in ("in", "inch", "inches") and total_in >= 12:
+            feet = int(total_in // 12)
+            inches = round(total_in - feet * 12, 1)
+            inches_str = f" {inches:g} in" if inches else ""
+            return f"{feet} ft{inches_str}"
+        return None  # feet / yards at these magnitudes are already fine
+    # Metric side: collapse very large cm/mm into metres.
+    if to_unit_norm in ("cm", "centimeter", "centimeters", "centimetre",
+                         "centimetres") and meters >= 2:
+        return f"{round(meters, 2):g} m"
+    if to_unit_norm in ("mm", "millimeter", "millimeters", "millimetre",
+                        "millimetres") and meters >= 1:
+        return f"{round(meters, 2):g} m"
+    return None
+
+
 def convert_units(value: float, from_unit: str, to_unit: str) -> dict:
     """Convert a physical measurement between metric and imperial units.
 
     Supports length (meters, centimeters, millimeters, kilometers, feet, inches,
     yards) and mass (grams, kilograms, ounces, pounds). Use this tool for ANY
     unit conversion of hockey rink, goal, stick, or puck dimensions instead of
-    computing the result yourself.
+    computing the result yourself. Prefer a natural target unit for the size of
+    the thing — feet (not inches) for rink/goal spans, metres (not centimetres)
+    for large metric dimensions. When the result would be awkward in the
+    requested unit, the returned `summary` uses a normalized form (e.g.
+    "45 ft 11 in" instead of "551 inches").
 
     Args:
         value: The numeric quantity to convert.
@@ -77,18 +114,27 @@ def convert_units(value: float, from_unit: str, to_unit: str) -> dict:
         to_unit: The target unit, e.g. "feet".
 
     Returns:
-        A dict with the converted value and a human-readable summary.
+        A dict with the converted value and a human-readable summary. When the
+        requested unit is awkward for the magnitude, a `normalized` field holds
+        a friendlier rendering and `summary` uses it.
     """
     f, t = _norm_unit(from_unit), _norm_unit(to_unit)
     for table in (_LENGTH, _MASS):
         if f in table and t in table:
             result = round(value * table[f] / table[t], 4)
+            normalized = (
+                _normalize_length(result, t) if table is _LENGTH else None
+            )
+            plain = f"{value} {from_unit} = {result} {to_unit}"
             payload = {
                 "input_value": value,
                 "from_unit": from_unit,
                 "to_unit": to_unit,
                 "result": result,
-                "summary": f"{value} {from_unit} = {result} {to_unit}",
+                "normalized": normalized,
+                "summary": (
+                    f"{value} {from_unit} = {normalized}" if normalized else plain
+                ),
             }
             TOOL_CALLS.append(payload)
             return payload
@@ -180,6 +226,23 @@ def _offline_tests() -> None:
         ok = False
     except ValueError:
         print("  [PASS] mismatched units raised ValueError")
+
+    # normalization: an awkward requested unit gets a friendlier summary
+    print("Normalization checks:")
+    norm_cases = [
+        # (value, from, to, expected `result`, expected `normalized`)
+        (14, "meters", "inches", 551.1811, "45 ft 11.2 in"),  # 551 in -> 45 ft 11.2 in
+        (200, "cm", "cm", 200.0, "2 m"),                     # 200 cm -> 2 m
+        (30, "meters", "feet", 98.4252, None),               # already sensible
+        (6, "inches", "inches", 6.0, None),                  # small -> keep inches
+    ]
+    for value, fu, tu, exp_result, exp_norm in norm_cases:
+        r = convert_units(value, fu, tu)
+        good = math.isclose(r["result"], exp_result, rel_tol=1e-3) and r["normalized"] == exp_norm
+        ok = ok and good
+        print(f"  [{'PASS' if good else 'FAIL'}] {value} {fu}->{tu}: "
+              f"result={r['result']} normalized={r['normalized']!r} "
+              f"(want {exp_norm!r})")
     print("OFFLINE:", "ALL PASS" if ok else "SOME FAILED")
 
 

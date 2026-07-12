@@ -9,7 +9,10 @@ QuickWhistle — Phase 5: Generation.
       -> grounded, cited answer
 
 The LLM is swappable via a single config value (config.MODEL_PROVIDER):
-  * "gemini" - gemini-1.5-flash by default (free tier; needs GEMINI_API_KEY)
+  * "anthropic" - Claude via the Anthropic API (default; needs ANTHROPIC_API_KEY).
+                  Default model claude-haiku-4-5 (cheapest capable tier);
+                  bump to claude-sonnet-5 / claude-opus-4-8 via ANTHROPIC_MODEL.
+  * "gemini" - Google Gemini (free tier; needs GEMINI_API_KEY)
   * "ollama" - local llama3.1/llama3.2 (no API key)
   * "mock"   - offline, deterministic; no model. Builds a templated grounded
                answer from the retrieved chunks so the pipeline/formatting and
@@ -81,12 +84,21 @@ def format_context(chunks: list[dict]) -> str:
 
 
 def build_user_message(
-    question: str, context: str, session_context: str | None = None
+    question: str,
+    context: str,
+    session_context: str | None = None,
+    detection_mode: str | None = None,
 ) -> str:
-    """Combine retrieved context, optional session memory, and the question."""
+    """Combine retrieved context, optional session memory, and the question.
+
+    `detection_mode` (explicit / implied / carry_forward / ambiguous) is surfaced
+    to the model so the system prompt's Step-2 clarify logic can act on it — e.g.
+    ask a clarifying question when the target league is ambiguous.
+    """
     preamble = f"[Session context] {session_context}\n\n" if session_context else ""
+    mode_line = f"[League detection: {detection_mode}]\n\n" if detection_mode else ""
     return (
-        f"{preamble}{context}\n\n"
+        f"{preamble}{mode_line}{context}\n\n"
         f"Using only the retrieved rulebook content above, answer the user's "
         f"question.\n\nUser question: {question}"
     )
@@ -120,8 +132,135 @@ def _retry_delay_seconds(exc, default: int) -> int:
     return default
 
 
+class AnthropicAdapter:
+    """Anthropic Claude (default). System prompt goes in the `system` field.
+
+    Uses the official `anthropic` SDK. The model is set by config.ANTHROPIC_MODEL
+    (default claude-haiku-4-5 — cheapest capable tier for grounded RAG answers;
+    swap to claude-sonnet-5 / claude-opus-4-8 via .env for a quality pass).
+    Thinking is left off: these are short, grounded, cite-from-context answers,
+    so extended reasoning would only add latency and cost.
+    """
+
+    # Tool schema for the metric<->imperial converter exposed to Claude. The
+    # function itself lives in src.tools and is imported lazily in generate()
+    # to avoid a circular import (src.tools imports from this module at load).
+    _CONVERT_TOOL = {
+        "name": "convert_units",
+        "description": (
+            "Convert a physical measurement between metric and imperial units "
+            "(length or mass). Use this for ANY unit conversion of hockey rink, "
+            "goal, stick, or puck dimensions instead of computing it yourself. "
+            "Prefer a natural target unit for the size (feet for rink/goal spans, "
+            "metres for large metric dimensions). For a range, convert both ends."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "value": {"type": "number",
+                          "description": "The numeric quantity to convert."},
+                "from_unit": {"type": "string",
+                              "description": "Source unit, e.g. 'meters'."},
+                "to_unit": {"type": "string",
+                            "description": "Target unit, e.g. 'feet'."},
+            },
+            "required": ["value", "from_unit", "to_unit"],
+        },
+    }
+
+    def __init__(self) -> None:
+        import anthropic
+
+        if not config.ANTHROPIC_API_KEY:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is not set. Add it to .env, or set "
+                "MODEL_PROVIDER=gemini / =ollama / =mock."
+            )
+        self._client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self._anthropic = anthropic
+
+    def _create(self, kwargs: dict):
+        """One messages.create call, guarded against sampling-param rejection
+        and transient rate-limit / overload errors. Mutates `kwargs` if it has
+        to drop `temperature`, so the change persists across the tool loop.
+        """
+        import time
+
+        for attempt in range(3):
+            try:
+                return self._client.messages.create(**kwargs)
+            except self._anthropic.BadRequestError as e:
+                # Newer Claude models (Sonnet 5, Opus 4.7/4.8, Fable 5) reject a
+                # non-default `temperature`. Keep the backend swappable: drop it
+                # once and retry so bumping ANTHROPIC_MODEL never 400s here.
+                if "temperature" in kwargs and "temperature" in str(e).lower():
+                    kwargs.pop("temperature")
+                    print("  [anthropic: model rejects temperature; retrying without it]")
+                    continue
+                raise
+            except (
+                self._anthropic.RateLimitError,
+                self._anthropic.InternalServerError,
+            ) as e:
+                if attempt == 2:
+                    raise
+                wait = 4 * (attempt + 1)
+                print(f"  [anthropic {type(e).__name__}; retrying in {wait}s]")
+                time.sleep(wait)
+        raise RuntimeError("unreachable")
+
+    @staticmethod
+    def _text(resp) -> str:
+        return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+    def generate(self, system_prompt: str, user_message: str) -> str:
+        # convert_units is the ONLY tool; imported lazily to dodge the
+        # src.answer <-> src.tools circular import.
+        from src.tools import convert_units
+
+        kwargs = dict(
+            model=config.ANTHROPIC_MODEL,
+            max_tokens=config.MAX_OUTPUT_TOKENS,
+            temperature=config.TEMPERATURE,
+            system=system_prompt,
+            tools=[self._CONVERT_TOOL],
+            messages=[{"role": "user", "content": user_message}],
+        )
+        # Tool-use loop: Claude calls convert_units only when a conversion is
+        # actually needed (non-conversion questions end on the first call, no
+        # extra cost). Execute the call, feed the result back, repeat until a
+        # final text answer. Capped so a misbehaving loop can't run forever.
+        resp = None
+        for _ in range(6):
+            resp = self._create(kwargs)
+            if resp.stop_reason != "tool_use":
+                return self._text(resp)
+            # Echo the assistant turn (with its tool_use blocks) verbatim.
+            kwargs["messages"].append({"role": "assistant", "content": resp.content})
+            results = []
+            for b in resp.content:
+                if b.type != "tool_use":
+                    continue
+                try:
+                    payload = convert_units(**b.input)
+                    content, is_error = payload["summary"], False
+                except Exception as e:  # unsupported/mismatched units, bad args
+                    content, is_error = f"Conversion failed: {e}", True
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": content,
+                    "is_error": is_error,
+                })
+            kwargs["messages"].append({"role": "user", "content": results})
+        # Hit the loop cap — return whatever text the last turn produced.
+        return self._text(resp) or (
+            "I wasn't able to complete the unit conversion. Please try rephrasing."
+        )
+
+
 class GeminiAdapter:
-    """Google Gemini (default). System prompt goes in as system_instruction."""
+    """Google Gemini (alternative). System prompt goes in as system_instruction."""
 
     def __init__(self) -> None:
         import google.generativeai as genai
@@ -226,6 +365,8 @@ class MockAdapter:
 def get_llm():
     """Return the adapter for config.MODEL_PROVIDER."""
     provider = config.MODEL_PROVIDER
+    if provider == "anthropic":
+        return AnthropicAdapter()
     if provider == "gemini":
         return GeminiAdapter()
     if provider == "ollama":
@@ -233,7 +374,8 @@ def get_llm():
     if provider == "mock":
         return MockAdapter()
     raise ValueError(
-        f"Unknown MODEL_PROVIDER {provider!r}. Use gemini, ollama, or mock."
+        f"Unknown MODEL_PROVIDER {provider!r}. "
+        "Use anthropic, gemini, ollama, or mock."
     )
 
 
@@ -293,7 +435,9 @@ def answer(
 
     system_prompt = load_system_prompt()
     context = format_context(context_chunks)
-    user_message = build_user_message(question, context, session_context)
+    user_message = build_user_message(
+        question, context, session_context, detection_mode=mode
+    )
 
     llm = get_llm()
     text = llm.generate(system_prompt, user_message)

@@ -1,19 +1,19 @@
 """
-QuickWhistle — Phase 7: Streamlit chat UI.
+QuickWhistle — Streamlit chat UI.
 
     streamlit run app.py
 
 Features:
   * chat-style message history (st.chat_message / st.chat_input)
   * rendered grounded answer (the model's Sources block is part of it)
-  * a structured "Sources" recap + a "🔎 view retrieved chunks" expander that
-    shows each chunk's league + rule number (not just the text)
+  * colored league / detection / grounded badges under each answer
+  * a "🔎 view retrieved chunks" expander showing each chunk's league + rule
+  * clickable example questions on the empty screen
   * wired to answer.py + memory.py (session memory carries follow-ups; opt-in
     long-term preferences live in the sidebar)
-  * a visible "thinking…" spinner so free-tier latency never looks frozen
-  * 429 retry (in the Gemini adapter) + client-side request spacing here
-  * backend is swappable via MODEL_PROVIDER (gemini / ollama / mock) — the UI
-    runs against the offline stub unchanged.
+  * a visible "thinking…" spinner so latency never looks frozen
+  * backend is swappable via MODEL_PROVIDER (anthropic / gemini / ollama / mock)
+    — the UI runs against any of them unchanged.
 
 Cross-platform: launch the same way on macOS and Windows; only the venv
 activation path differs (see README).
@@ -32,9 +32,37 @@ import config  # noqa: E402
 from src.memory import LongTermMemory, SessionMemory, answer_with_memory  # noqa: E402
 
 LOCAL_USER = "local_user"
-# Client-side spacing between LLM calls on the rate-limited free tier. The
-# adapter also retries on 429; this just smooths rapid-fire messages.
+# Client-side spacing between LLM calls on the rate-limited Gemini free tier. The
+# adapter also retries on 429; this just smooths rapid-fire messages. No-op on
+# Anthropic / Ollama / mock.
 SPACING_SECONDS = 13 if config.MODEL_PROVIDER == "gemini" else 0
+
+# Conversational modes never retrieve, so a "grounded" badge would be noise.
+_CONVERSATIONAL = {"greeting", "chitchat", "off_topic"}
+
+# Starter questions shown on the empty screen (each exercises a different path).
+EXAMPLES = [
+    "What is icing in the NHL?",
+    "Is body checking allowed in the PWHL?",
+    "How wide is an IIHF rink in feet?",
+    "What's the penalty for fighting in the NHL?",
+    "Difference between a minor and a major penalty?",
+    "What does the NCAA say about checking from behind?",
+]
+
+_CSS = """
+<style>
+  .qw-pill { display:inline-block; padding:2px 10px; margin:2px 6px 2px 0;
+             border-radius:999px; font-size:0.72rem; font-weight:600;
+             line-height:1.6; white-space:nowrap; }
+  .qw-league      { background:#E8F0FA; color:#1E5AA8; border:1px solid #cbdcf0; }
+  .qw-mode        { background:#F1F5FA; color:#425466; border:1px solid #dde5ee; }
+  .qw-grounded    { background:#E6F4EA; color:#1E7E34; border:1px solid #b7e0c2; }
+  .qw-notgrounded { background:#FDECEC; color:#B02A2A; border:1px solid #f3c2c2; }
+  .qw-tagline { color:#5b6b7b; font-size:0.98rem; margin:-6px 0 4px 0; }
+  .qw-leaguerow { margin:2px 0 10px 0; }
+</style>
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +80,7 @@ def init_state() -> None:
 
 
 def throttle() -> None:
-    """Sleep just enough to respect the free-tier rate limit (no-op if idle)."""
+    """Sleep just enough to respect the Gemini free-tier limit (no-op otherwise)."""
     if not SPACING_SECONDS:
         return
     elapsed = time.time() - st.session_state.last_llm_ts
@@ -86,14 +114,23 @@ def render_chunks_expander(chunks: list[dict]) -> None:
 
 
 def render_meta(meta: dict) -> None:
-    """Small caption: detected league(s) + how they were resolved."""
+    """Colored badges: detected league(s), how they were resolved, grounding."""
     if not meta:
         return
-    leagues = ", ".join(meta.get("leagues") or []) or "—"
-    st.caption(
-        f"league(s): {leagues} · detection: {meta.get('detection_mode')} · "
-        f"grounded: {meta.get('grounded')}"
-    )
+    mode = meta.get("detection_mode")
+    pills = [
+        f'<span class="qw-pill qw-league">{lg}</span>'
+        for lg in (meta.get("leagues") or [])
+    ]
+    if mode:
+        pills.append(f'<span class="qw-pill qw-mode">detection: {mode}</span>')
+    # Grounding badge only where it's meaningful (skip greetings/chitchat/off-topic).
+    if mode not in _CONVERSATIONAL:
+        if meta.get("grounded"):
+            pills.append('<span class="qw-pill qw-grounded">✓ grounded in rulebook</span>')
+        else:
+            pills.append('<span class="qw-pill qw-notgrounded">no matching rule</span>')
+    st.markdown("".join(pills), unsafe_allow_html=True)
 
 
 def render_message(msg: dict) -> None:
@@ -102,6 +139,22 @@ def render_message(msg: dict) -> None:
         if msg["role"] == "assistant":
             render_meta(msg.get("meta", {}))
             render_chunks_expander(msg.get("chunks", []))
+
+
+def render_empty_state() -> None:
+    """Welcome card + clickable example questions (shown when chat is empty)."""
+    st.info(
+        "👋 **Ask me anything about ice-hockey rules.** I pull the answer straight "
+        "from the official rulebooks, explain it in plain language, and cite the "
+        "exact rule. I can also convert rink/goal dimensions between metric and "
+        "imperial."
+    )
+    st.markdown("###### Try one of these")
+    cols = st.columns(2)
+    for i, q in enumerate(EXAMPLES):
+        if cols[i % 2].button(q, key=f"ex_{i}", use_container_width=True):
+            st.session_state.pending_prompt = q
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +205,7 @@ def render_sidebar() -> None:
     if st.sidebar.button("🧹 Clear chat & session memory"):
         st.session_state.messages = []
         st.session_state.session_memory = SessionMemory()
+        st.session_state.pop("pending_prompt", None)
         st.rerun()
 
 
@@ -161,19 +215,35 @@ def render_sidebar() -> None:
 def main() -> None:
     st.set_page_config(page_title="QuickWhistle", page_icon="🏒")
     init_state()
+    st.markdown(_CSS, unsafe_allow_html=True)
     render_sidebar()
 
+    # --- Header ---
     st.title("QuickWhistle 🏒")
-    st.caption(
-        "Ask about ice hockey **rules** across the NHL, PWHL, IIHF, AHL, NCAA, "
-        "and USA Hockey. Every answer is grounded in the rulebooks and cited."
+    st.markdown(
+        '<div class="qw-tagline">Grounded, cited answers on ice-hockey rules — '
+        "straight from the official rulebooks.</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="qw-leaguerow">'
+        + "".join(f'<span class="qw-pill qw-league">{lg}</span>' for lg in config.LEAGUES)
+        + "</div>",
+        unsafe_allow_html=True,
     )
 
     # Replay history.
     for msg in st.session_state.messages:
         render_message(msg)
 
-    prompt = st.chat_input("Ask a hockey rules question…")
+    # A typed message OR a clicked example question.
+    typed = st.chat_input("Ask a hockey rules question…")
+    prompt = typed or st.session_state.pop("pending_prompt", None)
+
+    # Empty screen (nothing to process yet): welcome + example buttons.
+    if not st.session_state.messages and not prompt:
+        render_empty_state()
+        return
     if not prompt:
         return
 
@@ -186,10 +256,7 @@ def main() -> None:
     with st.chat_message("assistant"):
         try:
             throttle()
-            with st.spinner(
-                "QuickWhistle is thinking… (free-tier responses can take a "
-                "few seconds)"
-            ):
+            with st.spinner("QuickWhistle is checking the rulebooks…"):
                 res = answer_with_memory(
                     prompt,
                     st.session_state.session_memory,

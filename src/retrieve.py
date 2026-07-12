@@ -122,24 +122,58 @@ def _ordered(leagues) -> list[str]:
 # ===========================================================================
 # Follow-up query expansion
 # ===========================================================================
-_FOLLOWUP_MARKERS = (
-    "what about", "how about", "and ", "what if", "same for", "same in",
-    "in the", "for the", "is it", "does it", "what's the", "whats the",
-)
+# Function/question words ignored when testing topical overlap between turns.
+_STOPWORDS = {
+    "a", "an", "and", "the", "is", "are", "was", "were", "be", "been", "being",
+    "of", "in", "on", "at", "to", "for", "from", "with", "by", "about", "as",
+    "it", "its", "this", "that", "these", "those", "what", "whats", "how",
+    "why", "when", "where", "which", "who", "do", "does", "did", "done", "if",
+    "or", "so", "i", "me", "my", "we", "our", "you", "your", "he", "she",
+    "they", "them", "explain", "tell", "please", "can", "could", "would",
+    "should", "same", "there", "here", "any", "some", "just", "also", "no",
+    "not", "get", "got", "give", "know", "mean", "means",
+}
+# League / venue references carry no rules topic of their own. A follow-up made
+# up ONLY of these (e.g. "what about in the Olympics?") is a bare contextual
+# reference and must inherit the previous turn's topic to retrieve well.
+_CONTEXT_TOKENS = {
+    "nhl", "pwhl", "iihf", "ahl", "ncaa", "usa", "usah", "hockey",
+    "olympic", "olympics", "worlds", "world", "international",
+    "europe", "european", "college", "collegiate", "university",
+    "junior", "youth", "pro", "professional", "women", "womens", "womans",
+    "league", "leagues",
+}
+
+
+def _content_tokens(text: str) -> set[str]:
+    """Meaningful (non-stopword) tokens of a message."""
+    return {t for t in tokenize(text) if t not in _STOPWORDS}
 
 
 def expand_query(question: str, prev_question: str | None) -> str:
-    """Lightly expand short follow-ups using the previous question.
+    """Prepend the previous question ONLY for genuine follow-ups.
 
-    "what about in the Olympics?" carries little signal on its own; prepending
-    the prior turn ("What is icing?") restores the topic for retrieval. We only
-    expand when the new question is short or opens with a follow-up marker, so
-    full standalone questions are left untouched.
+    Bug fix: the old rule expanded any message <=6 words, so an unrelated new
+    topic ("how wide are European rinks?") wrongly inherited the prior topic's
+    chunks. Now we expand only when the follow-up is topically tied to the
+    previous turn:
+      1. it shares a non-stopword token with the previous question
+         ("...icing" -> "...no touch icing"), OR
+      2. it carries no rules topic of its own — only a league/venue reference
+         ("what about in the Olympics?") — so it must inherit the prior topic.
+    Otherwise it's treated as a fresh question and left untouched.
     """
     if not prev_question:
         return question
-    q = question.strip().lower()
-    if len(question.split()) <= 6 or q.startswith(_FOLLOWUP_MARKERS):
+
+    cur = _content_tokens(question)
+    prev = _content_tokens(prev_question)
+
+    shares_topic = bool(cur & prev)
+    residual = cur - _CONTEXT_TOKENS
+    bare_context_ref = (not residual) and bool(cur & _CONTEXT_TOKENS)
+
+    if shares_topic or bare_context_ref:
         return f"{prev_question.strip()} {question.strip()}"
     return question
 

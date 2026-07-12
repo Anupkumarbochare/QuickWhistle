@@ -1,22 +1,27 @@
 id,type,detection_mode,used_leagues,cited,retrieval_ok,citation_correct,citation_fidelity,behavior_ok
-uc1_icing_novice,gameplay,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:81; PWHL:83; IIHF:81; NCAA:85,True,True,True,True
-uc2_hitting_pwhl_vs_nhl,cross_league,explicit,"NHL,PWHL",PWHL:52; NHL:43; PWHL:43; NHL:59,True,,True,True
-uc3_checking_age_usa,gameplay,explicit,USA_HOCKEY,-,,,,True
-uc4_penalty_types,definitional,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:20; PWHL:22; IIHF:20; AHL:23; NCAA:22,,,True,True
+uc1_icing_novice,gameplay,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",-,True,False,,False
+uc2_hitting_pwhl_vs_nhl,cross_league,explicit,"NHL,PWHL",PWHL:52; NHL:43; NHL:59,True,,True,True
+uc3_checking_age_usa,gameplay,explicit,USA_HOCKEY,USA_HOCKEY:604,,,True,True
+uc4_penalty_types,definitional,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:20; PWHL:22; IIHF:20; NCAA:22,,,True,True
 uc5_iihf_worlds_structure,tournament_structure,explicit,IIHF,-,,,,True
 olympics_icing_gameplay,gameplay,implied,IIHF,IIHF:81,True,True,True,True
 olympics_format_boundary,refusal_boundary,implied,IIHF,-,,,,True
 nhl_offside,gameplay,explicit,NHL,NHL:83,True,True,True,True
-nhl_high_sticking,gameplay,explicit,NHL,NHL:60; NHL:80; NHL:37,True,True,True,True
-nhl_too_many_men,gameplay,explicit,NHL,NHL:74; NHL:70,True,True,True,True
+nhl_high_sticking,gameplay,explicit,NHL,NHL:60; NHL:80,True,True,True,True
+nhl_too_many_men,gameplay,explicit,NHL,NHL:74,True,True,True,True
 nhl_fighting,gameplay,explicit,NHL,NHL:46,True,True,True,True
 nhl_delayed_penalty,gameplay,explicit,NHL,NHL:26,,,True,True
 iihf_icing_touch,gameplay,explicit,IIHF,IIHF:81,True,True,True,True
-ncaa_checking_from_behind,gameplay,explicit,NCAA,NCAA:50; NCAA:94,True,True,True,True
+ncaa_checking_from_behind,gameplay,explicit,NCAA,NCAA:50,True,True,True,True
 pwhl_body_checking,gameplay,explicit,PWHL,PWHL:52,True,True,True,True
 ahl_icing,gameplay,explicit,AHL,AHL:82,True,True,True,True
-expert_ref_signal,expert_tone,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:81; PWHL:83; AHL:82,True,True,True,True
+expert_ref_signal,expert_tone,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:81; PWHL:83; AHL:82; IIHF:81,True,True,True,True
 ambiguous_two_line_pass,ambiguous,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",-,,,,True
-offtopic_pizza,off_topic,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",-,,,,True
-offtopic_score,off_topic,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",-,,,,True
-empty_retrieval_refund,empty_retrieval,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",-,,,,True
+offtopic_pizza,off_topic,off_topic,-,-,,,,True
+offtopic_score,off_topic,off_topic,-,-,,,,True
+empty_retrieval_refund,empty_retrieval,off_topic,-,-,,,,False
+colloq_crash_crease_nhl,gameplay,explicit,NHL,NHL:38,False,False,True,True
+colloq_breakaway_penalty_shot_nhl,gameplay,explicit,NHL,NHL:24; NHL:53,True,True,True,True
+colloq_automatic_icing_nhl,gameplay,explicit,NHL,NHL:81,True,True,True,True
+colloq_hitting_pwhl,gameplay,explicit,PWHL,PWHL:52; PWHL:48,True,True,True,True
+colloq_boarding_nhl,gameplay,explicit,NHL,?:69,False,False,,True

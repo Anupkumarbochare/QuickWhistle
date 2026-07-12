@@ -134,22 +134,35 @@ RELEVANCE_MAX_DISTANCE = 0.70
 
 # ---------------------------------------------------------------------------
 # Generation LLM — swappable via a single config value.
-# Set MODEL_PROVIDER in .env to "gemini" (default) or "ollama".
+# Set MODEL_PROVIDER in .env to "anthropic" (default), "gemini", "ollama",
+# or "mock".
 # ---------------------------------------------------------------------------
-MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "gemini").lower()
+MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "anthropic").lower()
 
 # The actual model name for the chosen provider.
+# Anthropic/Claude is the default backend. Haiku 4.5 is the cheapest capable
+# tier ($1/$5 per 1M tokens) and is well suited to grounded, cite-from-context
+# RAG answers; bump to claude-sonnet-5 or claude-opus-4-8 via .env for a
+# higher-quality pass. Nothing else in the pipeline changes.
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
+
 # gemini-1.5-flash (the brief's stated default) was retired by Google. This
 # key's free tier is capped at ~20 requests/day for gemini-2.5-flash, so the
-# default is gemini-2.5-flash-lite (separate daily bucket). Override via .env.
+# fallback default is gemini-2.5-flash-lite (separate daily bucket).
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Convenience: the single "MODEL" value the brief refers to.
-MODEL = GEMINI_MODEL if MODEL_PROVIDER == "gemini" else OLLAMA_MODEL
+MODEL = {
+    "anthropic": ANTHROPIC_MODEL,
+    "gemini": GEMINI_MODEL,
+    "ollama": OLLAMA_MODEL,
+}.get(MODEL_PROVIDER, ANTHROPIC_MODEL)
 
-# Secret — never hardcoded. Only needed when MODEL_PROVIDER == "gemini".
+# Secrets — never hardcoded; loaded from .env. Each is only needed when its
+# provider is selected.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Generation parameters

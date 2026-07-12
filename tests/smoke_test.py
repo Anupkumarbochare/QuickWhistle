@@ -52,9 +52,10 @@ def chat_smoke() -> None:
 
     for i, (q, expect_leagues, expect_mode) in enumerate(turns, 1):
         at.chat_input[0].set_value(q).run()
-        captions = [c.value for c in at.caption]
-        meta_caps = [c for c in captions if c.startswith("league(s):")]
-        latest = meta_caps[-1] if meta_caps else ""
+        # Meta is now rendered as HTML badge markdown (league/detection/grounded
+        # pills); the meta row is the markdown block containing "detection:".
+        metas = [m.value for m in at.markdown if "detection:" in m.value]
+        latest = metas[-1] if metas else ""
         expanders = [e.label for e in at.expander if "retrieved chunks" in e.label]
         print(f"\n  Turn {i}: {q!r}")
         print(f"    meta: {latest}")
@@ -63,7 +64,8 @@ def chat_smoke() -> None:
         check(f"Turn {i}: assistant answered (no exception)",
               not at.exception)
         check(f"Turn {i}: chunk expander rendered", bool(expanders))
-        ok_lg = all(lg in latest for lg in expect_leagues)
+        # League codes appear as pill text, e.g. `>NHL</span>`.
+        ok_lg = all(f">{lg}<" in latest for lg in expect_leagues)
         check(f"Turn {i}: detected {expect_leagues}", ok_lg, latest)
         check(f"Turn {i}: detection mode '{expect_mode}'",
               f"detection: {expect_mode}" in latest)
@@ -92,8 +94,8 @@ def triage_smoke() -> None:
     prev_expanders = 0
     for msg, mode, canned, expect_retrieval in rows:
         at.chat_input[0].set_value(msg).run()
-        caps = [c.value for c in at.caption if c.value.startswith("league(s):")]
-        latest = caps[-1] if caps else ""
+        metas = [m.value for m in at.markdown if "detection:" in m.value]
+        latest = metas[-1] if metas else ""
         exp_count = len([e for e in at.expander if "retrieved chunks" in e.label])
         retrieved = exp_count > prev_expanders
         prev_expanders = exp_count
@@ -132,10 +134,12 @@ def tool_smoke() -> None:
     for label, got, exp in cases:
         check(f"convert_units {label}", math.isclose(got, exp, rel_tol=1e-3),
               f"{got}")
-    print("\n  NOTE: the model-driven tool CALL (Gemini function calling) is "
-          "verified in the Phase 9 live demo:\n        `python src/tools.py "
-          "--live` -> tool_calls fire (26 m->85.30 ft, 30 m->98.43 ft).")
-    print("        Tool-calling is Gemini-specific, so the mock chat path does "
+    print("\n  NOTE: the model-driven tool CALL is verified live on the real "
+          "backends:\n        - Claude (default): convert_units is wired into "
+          "answer() and fires in the app\n          (e.g. 'How wide is an IIHF "
+          "rink in feet?' -> 26 m->85.30 ft, 30 m->98.43 ft).")
+    print("        - Gemini: `python src/tools.py --live` (function calling).")
+    print("        The mock backend has no tools, so the mock chat path does "
           "not invoke it.")
 
 
