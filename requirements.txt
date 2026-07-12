@@ -21,13 +21,17 @@ rank-bm25==0.2.2          # keyword/BM25 side of hybrid search
 
 # --- Generation LLM adapters (swappable via config) ---
 anthropic==0.116.0             # default: Claude via the Anthropic API (claude-haiku-4-5)
-google-generativeai==0.8.2     # alternative: Gemini (free tier)
+google-generativeai==0.7.2     # alternative: Gemini (free tier). Pinned to 0.7.x to
+                               # satisfy langchain-google-genai 1.0.10 (needs >=0.7,<0.8).
 ollama==0.3.3                  # alternative: local llama3.1 / llama3.2
 
 # --- Evaluation ---
 ragas==0.1.21             # faithfulness, answer relevancy, context recall
 datasets==2.21.0          # RAGAS needs this for its dataset format
-langchain-google-genai    # wraps Gemini as a LangChain LLM for RAGAS judging
+langchain-google-genai==1.0.10   # wraps Gemini as a LangChain LLM for RAGAS judging
+                                 # (1.0.x is required: needs google-generativeai>=0.8,
+                                 #  matching the 0.8.2 pin above. Leaving it unpinned makes
+                                 #  pip pick 0.0.x, which demands google-generativeai<0.4 -> conflict.)
 
 # --- UI ---
 streamlit==1.38.0
