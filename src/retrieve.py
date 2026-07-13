@@ -97,13 +97,19 @@ def detect_leagues(
         lg for lg, pats in LEAGUE_ALIASES.items()
         if any(re.search(p, q) for p in pats)
     ]
-    if explicit:
-        return _ordered(explicit), "explicit"
-
     implied = [
         lg for lg, pats in LEAGUE_IMPLIED.items()
         if any(re.search(p, q) for p in pats)
     ]
+
+    # Collect ALL league matches in the query, not just the first kind found.
+    # A comparison like "NHL vs the Olympics" names NHL explicitly and implies
+    # IIHF (Olympics) — both must come back so cross-league answers aren't
+    # silently narrowed to one league. Explicit hits set the mode; implied ones
+    # are unioned in (an implied league already named explicitly isn't double
+    # counted by _ordered).
+    if explicit:
+        return _ordered(explicit + implied), "explicit"
     if implied:
         return _ordered(implied), "implied"
 
@@ -309,8 +315,9 @@ def retrieve(
 
     If `leagues` is given it is used verbatim (metadata filter). Otherwise the
     target league(s) are detected from the question (and session default).
-    Returns up to `k` chunk dicts, balanced across leagues for cross-league
-    questions so each league is represented.
+    Single-league questions return up to `k` chunks. Cross-league questions
+    return up to `k` chunks PER detected league, interleaved so each league is
+    represented (a comparison needs a healthy set from every side).
     """
     if leagues:
         target = _ordered([lg.upper() for lg in leagues])
@@ -327,12 +334,21 @@ def retrieve(
         lg: _fuse_one_league(lg, q_emb, query, config.CANDIDATE_K) for lg in target
     }
 
-    # Single league: straight top-k. Multiple: round-robin so every league is
-    # represented (required for cross-league comparison answers).
+    # Single league: straight top-k. A genuine multi-league comparison (a
+    # handful of explicitly/implied-named leagues): take k PER league (not k
+    # total), then interleave so each league is represented up front — the old
+    # global k=5 cap starved the second league (e.g. 4 NHL + 1 IIHF).
+    # Ambiguous is different: no league was identified, so `target` is ALL
+    # leagues as a fallback, not a comparison. Fanning k-per-league out to k*6
+    # chunks there just dilutes context and invites citation drift, so keep the
+    # global k cap for that case (the system prompt clarifies / defaults NHL).
     if len(target) == 1:
         results = per_league[target[0]][:k]
-    else:
+    elif mode == "ambiguous":
         results = _round_robin(per_league, target, k)
+    else:
+        capped = {lg: per_league[lg][:k] for lg in target}
+        results = _round_robin(capped, target, k * len(target))
 
     # Tag retrieval metadata on the list via the first element is awkward; we
     # attach detection mode to each record so the UI/eval can surface it.

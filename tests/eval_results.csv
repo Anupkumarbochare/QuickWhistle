@@ -1,13 +1,13 @@
 id,type,detection_mode,used_leagues,cited,retrieval_ok,citation_correct,citation_fidelity,behavior_ok
 uc1_icing_novice,gameplay,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",-,True,False,,False
-uc2_hitting_pwhl_vs_nhl,cross_league,explicit,"NHL,PWHL",PWHL:52; NHL:43; NHL:59,True,,True,True
+uc2_hitting_pwhl_vs_nhl,cross_league,explicit,"NHL,PWHL",NHL:43; PWHL:52,True,,True,True
 uc3_checking_age_usa,gameplay,explicit,USA_HOCKEY,USA_HOCKEY:604,,,True,True
-uc4_penalty_types,definitional,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:20; PWHL:22; IIHF:20; NCAA:22,,,True,True
+uc4_penalty_types,definitional,ambiguous,"AHL,IIHF,NCAA,NHL,PWHL",NHL:20; PWHL:22; NCAA:22,,,True,True
 uc5_iihf_worlds_structure,tournament_structure,explicit,IIHF,-,,,,True
 olympics_icing_gameplay,gameplay,implied,IIHF,IIHF:81,True,True,True,True
 olympics_format_boundary,refusal_boundary,implied,IIHF,-,,,,True
 nhl_offside,gameplay,explicit,NHL,NHL:83,True,True,True,True
-nhl_high_sticking,gameplay,explicit,NHL,NHL:60; NHL:80,True,True,True,True
+nhl_high_sticking,gameplay,explicit,NHL,NHL:60; NHL:60; NHL:60; NHL:60; NHL:60,True,True,True,True
 nhl_too_many_men,gameplay,explicit,NHL,NHL:74,True,True,True,True
 nhl_fighting,gameplay,explicit,NHL,NHL:46,True,True,True,True
 nhl_delayed_penalty,gameplay,explicit,NHL,NHL:26,,,True,True

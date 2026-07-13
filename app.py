@@ -196,6 +196,22 @@ def render_sidebar() -> None:
         )
         lt.set_expertise(None if sel_exp.startswith("(infer") else sel_exp)
 
+        roles = ["(none)"] + list(lt.ROLE_TYPES)
+        cur_role = lt.data.get("role_type") or "(none)"
+        sel_role = st.sidebar.selectbox(
+            "Your role", roles,
+            index=roles.index(cur_role) if cur_role in roles else 0,
+        )
+        lt.set_role_type(None if sel_role == "(none)" else sel_role)
+
+        divs = ["(none)"] + list(lt.YOUTH_DIVISIONS)
+        cur_div = lt.data.get("youth_division") or "(none)"
+        sel_div = st.sidebar.selectbox(
+            "Youth division", divs,
+            index=divs.index(cur_div) if cur_div in divs else 0,
+        )
+        lt.set_youth_division(None if sel_div == "(none)" else sel_div)
+
         if st.sidebar.button("🗑️ Delete my stored data"):
             lt.delete()
             st.sidebar.success("Stored preferences deleted.")

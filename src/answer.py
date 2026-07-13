@@ -222,7 +222,16 @@ class AnthropicAdapter:
             model=config.ANTHROPIC_MODEL,
             max_tokens=config.MAX_OUTPUT_TOKENS,
             temperature=config.TEMPERATURE,
-            system=system_prompt,
+            # The long, verbatim system prompt is identical on every call, so
+            # mark it as an ephemeral cache breakpoint: Anthropic caches it and
+            # subsequent calls within the ~5-minute window read it back at ~10%
+            # of the input-token cost (a write costs ~25% more once). Cached
+            # reads show up as `cache_read_input_tokens` in resp.usage.
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }],
             tools=[self._CONVERT_TOOL],
             messages=[{"role": "user", "content": user_message}],
         )
@@ -406,7 +415,13 @@ def answer(
     # retrieve -> ground -> cite pipeline. greeting/chitchat/off_topic get a
     # cheap canned reply (no retrieval, no Sources). The LLM tiebreak is only
     # consulted for ambiguous, hockey-signal-free messages.
-    label = triage.classify(question, llm_classify=_llm_classify)
+    # A prior rules turn sets prev_question (via answer_with_memory), so its
+    # presence marks an active conversation — short ambiguous follow-ups are
+    # then judged as rules continuations rather than fresh off-topic queries.
+    has_session = bool(prev_question)
+    label = triage.classify(
+        question, llm_classify=_llm_classify, has_session=has_session
+    )
     if label != triage.RULES:
         return {
             "answer": triage.canned_reply(label),

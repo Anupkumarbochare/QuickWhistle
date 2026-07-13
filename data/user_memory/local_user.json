@@ -1,5 +1,7 @@
 {
-  "enabled": true,
-  "preferred_league": "NHL",
-  "expertise": null
+  "enabled": false,
+  "preferred_league": null,
+  "expertise": null,
+  "role_type": null,
+  "youth_division": null
 }

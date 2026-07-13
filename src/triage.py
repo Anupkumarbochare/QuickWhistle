@@ -81,6 +81,16 @@ _HOCKEY_TERMS = (
     # rules-ish / dimensions / tournament
     "rule", "rulebook", "dimension", "regulation", "infraction", "violation",
     "relegation", "seeding", "olympic", "world championship",
+    # measurements / units / conversion (rink, goal, stick, puck sizes) — these
+    # let a dimension follow-up like "how wide is that in meters?" run the
+    # retrieve+convert path instead of being redirected as off-topic.
+    "meter", "metre", "feet", "foot", "inch", "cm", "convert",
+    "how wide", "how long", "how far", "how tall",
+    # equipment / gear
+    "equipment", "protective", "gear", "skate", "helmet", "pad", "visor",
+    "jersey",
+    # legality / permission phrasing ("is X legal / allowed / required?")
+    "required", "legal", "allowed",
 )
 
 
@@ -114,11 +124,23 @@ def _is_chitchat(low: str, words: list[str]) -> bool:
     return any(p in low for p in _CHITCHAT_PATTERNS)
 
 
-def classify(message: str, llm_classify=None) -> str:
+# A short ambiguous message mid-conversation is almost always a rules
+# follow-up ("how much is that?", "what about them?"), so we judge it in the
+# context of the active session rather than in isolation.
+_FOLLOWUP_MAX_WORDS = 8
+
+
+def classify(message: str, llm_classify=None, has_session: bool = False) -> str:
     """Return greeting | chitchat | rules_question | off_topic.
 
     Rule-based first (no LLM). `llm_classify`, if provided, is a callable
     (message -> label) used only for ambiguous messages with no hockey signal.
+
+    `has_session` is True when a prior rules turn has set a topic/league in the
+    session. When True, a SHORT ambiguous follow-up defaults to rules_question
+    (and skips the LLM tiebreak) — a bare "how much is that in feet?" is a
+    continuation of the conversation, not a fresh off-topic query. Greetings and
+    chitchat are still caught first, so "thanks!" mid-chat stays chitchat.
     """
     low = message.strip().lower()
     words = _tokens(low)
@@ -136,11 +158,16 @@ def classify(message: str, llm_classify=None) -> str:
     if _is_chitchat(low, words):
         return CHITCHAT
 
-    # 3. Ambiguous (no hockey signal, not greeting/chitchat). Optional LLM
-    #    tiebreak decides rules_question vs off_topic (this is the ONLY place an
-    #    LLM call may happen). If no tiebreak is available or it fails, default
-    #    to rules_question — safer to attempt an answer than to wrongly redirect
-    #    a real (oddly-phrased) rules question.
+    # 3. Ambiguous (no hockey signal, not greeting/chitchat).
+    # 3a. Session-aware: a short follow-up inside an active conversation is a
+    #     rules continuation. Resolve it in context; no LLM call needed.
+    if has_session and len(words) <= _FOLLOWUP_MAX_WORDS:
+        return RULES
+
+    # 3b. Otherwise the optional LLM tiebreak decides rules_question vs
+    #     off_topic (the ONLY place an LLM call may happen). If no tiebreak is
+    #     available or it fails, default to rules_question — safer to attempt an
+    #     answer than to wrongly redirect a real (oddly-phrased) rules question.
     if llm_classify is not None:
         try:
             label = llm_classify(message)

@@ -74,9 +74,20 @@ class SessionMemory:
 # Long-term memory (opt-in, persisted)
 # ===========================================================================
 class LongTermMemory:
-    """Per-user JSON store: preferred league + expertise. Opt-in; deletable."""
+    """Per-user JSON store: preferred league, expertise, role, youth division.
+    Opt-in; deletable."""
 
-    DEFAULT = {"enabled": False, "preferred_league": None, "expertise": None}
+    DEFAULT = {
+        "enabled": False,
+        "preferred_league": None,
+        "expertise": None,
+        "role_type": None,       # parent / coach / ref / new_fan / journalist
+        "youth_division": None,  # mite / squirt / bantam / junior
+    }
+
+    # Allowed values for the opt-in profile fields (None always clears a field).
+    ROLE_TYPES = ("parent", "coach", "ref", "new_fan", "journalist")
+    YOUTH_DIVISIONS = ("mite", "squirt", "bantam", "junior")
 
     def __init__(self, user_id: str, path: Path | None = None) -> None:
         self.user_id = user_id
@@ -124,6 +135,24 @@ class LongTermMemory:
         self.data["expertise"] = level
         self._save()
 
+    def set_role_type(self, role: str | None) -> None:
+        if not self.is_enabled:
+            raise RuntimeError("Enable long-term memory before setting preferences.")
+        if role not in (None, *self.ROLE_TYPES):
+            raise ValueError(f"role_type must be one of {self.ROLE_TYPES} or None.")
+        self.data["role_type"] = role
+        self._save()
+
+    def set_youth_division(self, division: str | None) -> None:
+        if not self.is_enabled:
+            raise RuntimeError("Enable long-term memory before setting preferences.")
+        if division not in (None, *self.YOUTH_DIVISIONS):
+            raise ValueError(
+                f"youth_division must be one of {self.YOUTH_DIVISIONS} or None."
+            )
+        self.data["youth_division"] = division
+        self._save()
+
     # --- right to be forgotten ---
     def delete(self) -> None:
         """Erase the stored file and reset to defaults (off)."""
@@ -138,6 +167,8 @@ class LongTermMemory:
         return {
             "preferred_league": self.data.get("preferred_league"),
             "expertise": self.data.get("expertise"),
+            "role_type": self.data.get("role_type"),
+            "youth_division": self.data.get("youth_division"),
         }
 
 
