@@ -81,6 +81,12 @@ class LeagueSpec:
     # Substrings/patterns scrubbed *inline* anywhere they appear (e.g. clickable
     # navigation link text that gets extracted mid-sentence).
     inline_noise_res: list[re.Pattern]
+    # OPT-IN subsection splitting. When set, a line that begins a rule subsection
+    # (e.g. "1.2 Dimensions", "11.6 Catching Glove", or a bare "1.2." with the
+    # heading on the next line) starts its OWN chunk carrying rule_number "1.2"
+    # and rule_name "Dimensions". None (the default) leaves a league's chunking
+    # completely unchanged. See _SUBSECTION_RE for the shared pattern.
+    subsection_re: re.Pattern | None = None
 
 
 def _ci(pattern: str) -> re.Pattern:
@@ -95,6 +101,17 @@ _COMMON_NOISE = [
 
 # Dash class reused across specs: hyphen-minus, en dash, em dash.
 _DASH = r"[\-–—]"
+
+# Shared subsection-header matcher, opted into per-league via LeagueSpec.
+# Matches a line that STARTS with a "N.M" label (a rule number, a dot, a
+# subsection number), with an optional trailing dot, e.g.
+#   "1.2."                         (IIHF/AHL: heading is on the NEXT line)
+#   "1.2 Dimensions - As nearly…"  (NHL/NCAA: heading + body inline)
+# group('num') is the "N.M" label; group('rest') is everything after it (the
+# inline heading/body) or None when the label sits alone on its line. The
+# chunker additionally requires the leading number to equal the current rule
+# number, so a stray cross-reference like "see 1.2" mid-body can't false-match.
+_SUBSECTION_RE = re.compile(r"^(?P<num>\d+\.\d+)\.?(?:\s+(?P<rest>\S.*))?$")
 
 
 # --- NHL: "SECTION 5 - OFFICIALS" / "Rule 30 – Appointment of Officials" -----
@@ -111,6 +128,7 @@ NHL_SPEC = LeagueSpec(
         _ci(r"\bNext Page\b"),
         _ci(r"\bTable of Contents\b"),
     ],
+    subsection_re=_SUBSECTION_RE,
 )
 
 # --- AHL: same family as NHL ("SECTION 1 – PLAYING AREA" / "Rule 1 – Rink") --
@@ -123,6 +141,7 @@ AHL_SPEC = LeagueSpec(
         *_COMMON_NOISE,
     ],
     inline_noise_res=[],
+    subsection_re=_SUBSECTION_RE,
 )
 
 # --- NCAA: "SECTION 1" or "SECTION 1 / Playing Area"; "RULE 1 - RINK" --------
@@ -134,6 +153,7 @@ NCAA_SPEC = LeagueSpec(
         *_COMMON_NOISE,
     ],
     inline_noise_res=[],
+    subsection_re=_SUBSECTION_RE,
 )
 
 # --- PWHL: "SECTION 1: PLAYING AREA"; "Rule 1" (name on next line) -----------
@@ -145,6 +165,7 @@ PWHL_SPEC = LeagueSpec(
         *_COMMON_NOISE,
     ],
     inline_noise_res=[],
+    subsection_re=_SUBSECTION_RE,
 )
 
 # --- IIHF: "SECTION 01. PLAYING AREA"; "RULE 14" (name on next line) ---------
@@ -160,6 +181,7 @@ IIHF_SPEC = LeagueSpec(
         *_COMMON_NOISE,
     ],
     inline_noise_res=[],
+    subsection_re=_SUBSECTION_RE,
 )
 
 # --- USA Hockey: "SECTION ONE" (spelled out); "Rule 101." (name inline OR
@@ -344,6 +366,29 @@ def _norm_section_no(num: str) -> str:
     return str(int(num)) if num.isdigit() else num
 
 
+def _split_subsection_segment(seg: str) -> tuple[str, str]:
+    """Split a subsection's leading segment into (name, inline_body).
+
+    The segment is the text carried on the header line after the "N.M" label
+    (NHL/NCAA), or the following line (IIHF/AHL). Layouts seen:
+      "DIMENSIONS"                       -> ("Dimensions", "")            [IIHF]
+      "Rink – American Hockey League…"   -> ("Rink", "American Hockey…")  [AHL]
+      "Dimensions - As nearly as…"       -> ("Dimensions", "As nearly…")  [NHL/NCAA]
+    The name is the part before the first " - "/" – " dash; the rest is body.
+    If the leading part doesn't look like a heading (long / a sentence), we
+    treat the whole segment as body and leave the name empty.
+    """
+    seg = (seg or "").strip()
+    if not seg:
+        return "", ""
+    parts = re.split(rf"\s+{_DASH}\s+", seg, maxsplit=1)
+    name = parts[0].strip()
+    body = parts[1].strip() if len(parts) > 1 else ""
+    if not _looks_like_name(name):
+        return "", seg
+    return name, body
+
+
 # Acronyms kept uppercase when title-casing; small words kept lowercase
 # (except as the first word).
 _TITLE_ACRONYMS = {"USA", "NHL", "PWHL", "IIHF", "AHL", "NCAA", "TV", "OT"}
@@ -396,7 +441,8 @@ def chunk_lines(lines: list[str], league: str, spec: LeagueSpec) -> list[Chunk]:
     cur_section = ""        # most recent "Section N - NAME"
     cur_section_no = ""     # tracked so a bare re-occurrence can't downgrade name
     cur_section_name = ""
-    cur_rule_no = ""
+    cur_rule_no = ""        # current citable unit ("81" or, after a split, "81.2")
+    cur_rule_top = ""       # top-level rule number ("81") — guards subsection match
     cur_rule_name = ""
     buf: list[str] = []
 
@@ -468,6 +514,7 @@ def chunk_lines(lines: list[str], league: str, spec: LeagueSpec) -> list[Chunk]:
             flush()           # close the previous rule
             buf = []
             cur_rule_no = rule_m.group(1).strip()
+            cur_rule_top = cur_rule_no  # subsections of this rule guard against it
             cur_rule_name = inline_name
             # name-on-next-line layouts: read the name from the following line,
             # but only if it's a plausible name (guards against swallowing body).
@@ -481,6 +528,31 @@ def chunk_lines(lines: list[str], league: str, spec: LeagueSpec) -> list[Chunk]:
                 i += 1
             i += 1
             continue
+
+        # Subsection boundary (opt-in per league). Only splits when we're inside
+        # a rule AND the label's leading number matches that rule — so a stray
+        # "1.2" cross-reference in the body of another rule can't false-match.
+        if spec.subsection_re is not None and cur_rule_top:
+            sub_m = spec.subsection_re.match(line)
+            if sub_m and sub_m.group("num").split(".")[0] == cur_rule_top:
+                rest = _optional_group(sub_m, "rest")
+                # Bare "1.2." label: the heading (and any body) is on the next
+                # line — consume it, unless that line is itself a header/label.
+                if (
+                    not rest
+                    and i + 1 < n
+                    and not _is_header(lines[i + 1], spec)
+                    and not spec.subsection_re.match(lines[i + 1])
+                ):
+                    rest = lines[i + 1]
+                    i += 1
+                name, lead_body = _split_subsection_segment(rest)
+                flush()                       # close the previous (sub)chunk
+                buf = [lead_body] if lead_body else []
+                cur_rule_no = sub_m.group("num")
+                cur_rule_name = name
+                i += 1
+                continue
 
         if cur_rule_no:
             buf.append(line)

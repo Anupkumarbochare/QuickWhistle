@@ -130,9 +130,18 @@ def _league_in(text: str) -> str | None:
 
 
 def parse_cited_rules(answer_text: str) -> list[tuple[str | None, str]]:
-    """Extract (league, rule_number) pairs from the answer's Sources block."""
+    """Extract (league, rule_number) pairs from the answer's Sources block.
+
+    A citation is a Sources-block entry (per the system prompt's output format).
+    If there is no "Sources:" block, the answer is a refusal/redirect and cites
+    nothing — we must NOT scan the prose, or a helpful pointer like "consult the
+    Boarding rule (Rule 41)" inside a refusal would be miscounted as a citation
+    (a false citation-fidelity violation).
+    """
     parts = re.split(r"sources\s*:", answer_text, flags=re.IGNORECASE)
-    block = parts[1] if len(parts) > 1 else answer_text
+    if len(parts) < 2:
+        return []
+    block = parts[1]
     cites: list[tuple[str | None, str]] = []
     for line in block.splitlines():
         m = re.search(r"rule\s*#?\s*(\d+)", line, flags=re.IGNORECASE)
@@ -166,7 +175,14 @@ def _has_any(text: str, phrases: list[str]) -> bool:
 def score_row(rec: dict) -> dict:
     t = rec["type"]
     answer_text = rec["answer"]
-    grounded_rules = {(c["league"], c["rule_number"]) for c in rec["chunks"]}
+    # Match at the RULE level: a subsection chunk (rule_number "81.2") counts as
+    # rule 81 being retrieved. expected_rule is always top-level, and
+    # parse_cited_rules already strips citations to the integer, so we reduce
+    # each chunk's rule_number to its top-level integer here too. This keeps
+    # retrieval/fidelity scoring correct after subsection-level chunking.
+    grounded_rules = {
+        (c["league"], str(c["rule_number"]).split(".")[0]) for c in rec["chunks"]
+    }
     used_leagues = set(rec["leagues"])
     cited = parse_cited_rules(answer_text)
     cited_set = {(lg, rn) for lg, rn in cited if lg}
@@ -238,7 +254,8 @@ def corpus_rule_text(league: str, rule_number: str, limit: int = 1800) -> str:
     with path.open(encoding="utf-8") as f:
         for line in f:
             c = json.loads(line)
-            if c["rule_number"] == rule_number:
+            # top-level match so subsection chunks ("81.2") feed rule 81's ref
+            if str(c["rule_number"]).split(".")[0] == rule_number:
                 parts.append(c["text"])
     return " ".join(parts)[:limit]
 

@@ -48,7 +48,18 @@ from src.build_index import get_client, get_embedder, tokenize  # noqa: E402
 # ===========================================================================
 # Explicit signals: the league is named (or unambiguously referenced).
 LEAGUE_ALIASES: dict[str, list[str]] = {
-    "NHL": [r"\bnhl\b", r"national hockey league"],
+    # NHL doubles as the default for generic "North American" phrasing (the NA
+    # pro leagues share the NHL's rink/rule baseline). Simple aliases only — no
+    # candidate-set resolution here. "american" carries a negative lookahead so
+    # it never steals "American Hockey League" from AHL.
+    "NHL": [
+        r"\bnhl\b",
+        r"national hockey league",
+        r"north\s*american",                     # "north american" / "northamerican"
+        r"\bamerican\b(?!\s+hockey\s+league)",   # 'american' but not the AHL's name
+        r"\bcanadian\b",
+        r"\bus\b",
+    ],
     "PWHL": [r"\bpwhl\b", r"professional women'?s hockey league"],
     "IIHF": [
         r"\biihf\b",

@@ -162,7 +162,10 @@ MODEL = {
 
 # Secrets — never hardcoded; loaded from .env. Each is only needed when its
 # provider is selected.
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+# Read from QUICKWHISTLE_ANTHROPIC_KEY so we don't collide with the reserved
+# ANTHROPIC_API_KEY that Claude Code itself uses for billing. The old name is
+# kept as a fallback so teammates aren't broken mid-transition.
+ANTHROPIC_KEY = os.getenv("QUICKWHISTLE_ANTHROPIC_KEY") or os.getenv("ANTHROPIC_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Generation parameters

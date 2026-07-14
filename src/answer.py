@@ -9,7 +9,7 @@ QuickWhistle — Phase 5: Generation.
       -> grounded, cited answer
 
 The LLM is swappable via a single config value (config.MODEL_PROVIDER):
-  * "anthropic" - Claude via the Anthropic API (default; needs ANTHROPIC_API_KEY).
+  * "anthropic" - Claude via the Anthropic API (default; needs QUICKWHISTLE_ANTHROPIC_KEY).
                   Default model claude-haiku-4-5 (cheapest capable tier);
                   bump to claude-sonnet-5 / claude-opus-4-8 via ANTHROPIC_MODEL.
   * "gemini" - Google Gemini (free tier; needs GEMINI_API_KEY)
@@ -171,12 +171,12 @@ class AnthropicAdapter:
     def __init__(self) -> None:
         import anthropic
 
-        if not config.ANTHROPIC_API_KEY:
+        if not config.ANTHROPIC_KEY:
             raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set. Add it to .env, or set "
+                "QUICKWHISTLE_ANTHROPIC_KEY is not set. Add it to .env, or set "
                 "MODEL_PROVIDER=gemini / =ollama / =mock."
             )
-        self._client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self._client = anthropic.Anthropic(api_key=config.ANTHROPIC_KEY)
         self._anthropic = anthropic
 
     def _create(self, kwargs: dict):
